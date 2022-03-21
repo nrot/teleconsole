@@ -16,9 +16,9 @@ async fn main() {
         params: InitParams::default(),
         session: Session::new(),
     };
-    if let Ok(mut a) = app::App::new(config).await{
+    if let Ok(mut a) = app::App::new(config).await {
         a.run().await;
-    }else {
+    } else {
         eprintln!("Can`t start app");
     }
 }

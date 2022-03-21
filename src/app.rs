@@ -100,7 +100,7 @@ impl App {
 
     pub async fn login(&mut self) {
         let mut login_state = LoginState::PhoneInput;
-        let mut login_token = None;
+        let mut login_token = LoginToken::empty(); //TIPS: This is just example
         loop {
             match login_state {
                 LoginState::PhoneInput => {
@@ -146,7 +146,7 @@ impl App {
                         .await
                     {
                         Ok(s) => {
-                            login_token = Some(s);
+                            login_token = s; //TIPS: Get LoginToken this
                             login_state = LoginState::CodeInput;
                         }
                         Err(e) => {
@@ -201,7 +201,7 @@ impl App {
                     }
                 }
                 LoginState::CodeCheck => {
-                    let Some(lg) = login_token;
+                    let lg = login_token; //TIPS: Use Token for sign in
                     match self.client.sign_in(&lg, self.user_input_buf.as_str()).await {
                         Ok(s) => {}
                         Err(e) => {}
