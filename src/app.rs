@@ -8,7 +8,8 @@ use grammers_client::{types::LoginToken, Client, Config, Update};
 use tokio::sync::mpsc;
 use tui::{
     backend::CrosstermBackend,
-    layout::Rect,
+    layout::{Alignment, Rect},
+    style::{Color, Style},
     widgets::{Block, Borders, Paragraph},
     Terminal,
 };
@@ -25,6 +26,13 @@ pub enum AppState {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum DialogState{
+    DialogChose,
+    DialogView,
+    DialogInput
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum LoginState {
     PhoneInput,
     TokenRequest,
@@ -35,8 +43,6 @@ pub enum LoginState {
 pub struct App {
     state: AppState,
     client: Client,
-    chats: Vec<i128>,
-    open_chat: Option<i128>,
     inputs: mpsc::UnboundedReceiver<Event>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
     user_input_buf: String,
@@ -70,8 +76,6 @@ impl App {
         Ok(App {
             state: AppState::Login,
             client: Client::connect(config).await?,
-            chats: Vec::new(),
-            open_chat: None,
             inputs: rxk,
             terminal,
             user_input_buf: String::new(),
@@ -88,32 +92,88 @@ impl App {
                 AppState::Login => {
                     self.login().await;
                 }
+                AppState::Dialogs=>{
+                    self.dialogs().await;
+                }
                 AppState::Exit => {
                     break;
                 }
-                _ => {}
+                _ => {
+                    break;
+                }
             }
         }
         self.inputs.close();
         disable_raw_mode().unwrap();
     }
 
+    pub async fn draw_error<T: ToString>(&mut self, message: &T) {
+        self.terminal
+            .draw(|f| {
+                let m = message.to_string();
+                let inp = Paragraph::new(m.as_str())
+                    .alignment(Alignment::Center)
+                    .block(
+                        Block::default()
+                            .title("Error")
+                            .borders(Borders::ALL)
+                            .border_style(Style::default().fg(Color::Red)),
+                    );
+                f.render_widget(inp, center(f.size(), 20, 3));
+            })
+            .unwrap();
+        self.inputs.recv().await;
+    }
+
+    pub fn draw_message(&mut self, title: &str, text: &str, size: Rect) {
+        self.terminal
+            .draw(|f| {
+                let inp = Paragraph::new(text)
+                    .alignment(Alignment::Center)
+                    .block(Block::default().title(title).borders(Borders::ALL));
+                f.render_widget(inp, center(f.size(), size.width, size.height));
+            })
+            .unwrap();
+    }
+
+    pub fn draw_dialogs(&mut self){
+        
+    }
+
+    pub async fn dialogs(&mut self){
+        let mut dialog_state = DialogState::DialogChose;
+        loop {
+
+            match dialog_state{
+                DialogState::DialogChose=>{
+
+                },
+                DialogState::DialogView=>{},
+                DialogState::DialogInput=>{},
+                #[allow(unreachable_patterns)]
+                _=>{break}
+            }
+        }
+    }
+
     pub async fn login(&mut self) {
         let mut login_state = LoginState::PhoneInput;
-        let mut login_token = LoginToken::empty(); //TIPS: This is just example
+        let mut login_token = None; //TIPS: This is just example
         loop {
             match login_state {
                 LoginState::PhoneInput => {
                     let buf = self.user_input_buf.clone();
-                    self.terminal
-                        .draw(|f| {
-                            let inp = Paragraph::new(buf.as_ref())
-                                .alignment(tui::layout::Alignment::Center)
-                                .block(Block::default().title("Phone input").borders(Borders::ALL));
-                            f.render_widget(inp, center(f.size(), 20, 3));
-                        })
-                        .unwrap();
+                    self.draw_message(
+                        "Phone input",
+                        buf.as_str(),
+                        Rect {
+                            width: 20,
+                            height: 3,
+                            ..Default::default()
+                        },
+                    );
                     while let Ok(e) = self.inputs.try_recv() {
+                        #[allow(clippy::single_match)]
                         match e {
                             Event::Key(c) => match c.code {
                                 KeyCode::Backspace => {
@@ -146,39 +206,28 @@ impl App {
                         .await
                     {
                         Ok(s) => {
-                            login_token = s; //TIPS: Get LoginToken this
+                            login_token = Some(s); //TIPS: Get LoginToken this
                             login_state = LoginState::CodeInput;
                         }
                         Err(e) => {
-                            let err = e.to_string();
-                            self.terminal
-                                .draw(|f| {
-                                    let inp = Paragraph::new(err.as_str())
-                                        .alignment(tui::layout::Alignment::Center)
-                                        .block(
-                                            Block::default()
-                                                .title("Auth error")
-                                                .borders(Borders::ALL),
-                                        );
-                                    f.render_widget(inp, center(f.size(), 20, 3));
-                                })
-                                .unwrap();
-                            let _ = self.inputs.recv().await;
+                            self.draw_error(&e).await;
                             login_state = LoginState::PhoneInput;
                         }
                     };
                 }
                 LoginState::CodeInput => {
                     let buf = self.user_input_buf.clone();
-                    self.terminal
-                        .draw(|f| {
-                            let inp = Paragraph::new(buf.as_ref())
-                                .alignment(tui::layout::Alignment::Center)
-                                .block(Block::default().title("Code input").borders(Borders::ALL));
-                            f.render_widget(inp, center(f.size(), 20, 3));
-                        })
-                        .unwrap();
+                    self.draw_message(
+                        "Code input",
+                        buf.as_str(),
+                        Rect {
+                            width: 20,
+                            height: 3,
+                            ..Default::default()
+                        },
+                    );
                     while let Ok(e) = self.inputs.try_recv() {
+                        #[allow(clippy::single_match)]
                         match e {
                             Event::Key(c) => match c.code {
                                 KeyCode::Backspace => {
@@ -201,12 +250,24 @@ impl App {
                     }
                 }
                 LoginState::CodeCheck => {
-                    let lg = login_token; //TIPS: Use Token for sign in
-                    match self.client.sign_in(&lg, self.user_input_buf.as_str()).await {
-                        Ok(s) => {}
-                        Err(e) => {}
+                    match self
+                        .client
+                        .sign_in(login_token.as_ref().unwrap(), self.user_input_buf.as_str())
+                        .await
+                    {
+                        Ok(_) => {
+                            self.state = AppState::Dialogs;
+                            break;
+                        }
+                        Err(e) => {
+                            self.draw_error(&e).await;
+                            login_state = LoginState::PhoneInput;
+                            login_token = None
+                        }
                     }
-                }
+                },
+                #[allow(unreachable_patterns)]
+                _=>{break}
             }
         }
     }
