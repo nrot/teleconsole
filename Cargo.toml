@@ -14,3 +14,5 @@ grammers-client = {git = "https://github.com/Lonami/grammers/", branch="master"}
 grammers-session = {git = "https://github.com/Lonami/grammers/", branch="master"}
 tokio = {version="1.17", features=["rt", "rt-multi-thread", "sync", "macros", "signal", "time"]}
 thiserror = "1.0"
+clap = {version="3.1.6", features=["derive", "env", "unicode"]}
+chrono = "0.4.19"

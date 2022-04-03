@@ -10,11 +10,11 @@ use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Row, Table},
     Terminal,
 };
 
-use crate::tg;
+use crate::{tg, dialogs::OrderedDialogs};
 
 #[derive(Debug, Clone, Copy)]
 pub enum AppState {
@@ -46,6 +46,7 @@ pub struct App {
     inputs: mpsc::UnboundedReceiver<Event>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
     user_input_buf: String,
+    chats: OrderedDialogs,
     api_id: i32,
     api_hash: String,
 }
@@ -71,7 +72,7 @@ impl App {
         let stdout = io::stdout();
         let backend = CrosstermBackend::new(stdout);
         let terminal = Terminal::new(backend).unwrap();
-        let api_id = config.api_id.clone();
+        let api_id = config.api_id;
         let api_hash = config.api_hash.clone();
         Ok(App {
             state: AppState::Login,
@@ -79,6 +80,7 @@ impl App {
             inputs: rxk,
             terminal,
             user_input_buf: String::new(),
+            chats: OrderedDialogs::new(),
             api_id,
             api_hash,
         })
@@ -87,6 +89,9 @@ impl App {
     pub async fn run(&mut self) {
         enable_raw_mode().unwrap();
         self.terminal.clear().unwrap();
+        if self.client.is_authorized().await.unwrap(){
+            self.state = AppState::Dialogs;
+        }
         loop {
             match self.state {
                 AppState::Login => {
@@ -136,14 +141,27 @@ impl App {
             .unwrap();
     }
 
-    pub fn draw_dialogs(&mut self){
-        
+    pub async fn draw_dialogs(&mut self){
+        let mut dialogs = self.client.iter_dialogs();
+        self.chats.clear();
+        while let Some(d) = dialogs.next().await.unwrap(){
+            self.chats.insert(d);
+        }
+        let lst = self.chats.list();
+        self.terminal.draw(|f|{
+            let mut tdrw = Vec::new();
+            for d in lst.iter(){
+                tdrw.push(Row::new(vec![d.chat.name(), ]))
+            }
+            let tbl = Table::new(tdrw);
+
+        }).unwrap();
     }
 
     pub async fn dialogs(&mut self){
         let mut dialog_state = DialogState::DialogChose;
         loop {
-
+            self.draw_dialogs().await;
             match dialog_state{
                 DialogState::DialogChose=>{
 
@@ -156,9 +174,13 @@ impl App {
         }
     }
 
+    pub async fn load_data(&mut self){
+        self.client.session().save();
+    }
+
     pub async fn login(&mut self) {
         let mut login_state = LoginState::PhoneInput;
-        let mut login_token = None; //TIPS: This is just example
+        let mut login_token = None;
         loop {
             match login_state {
                 LoginState::PhoneInput => {
@@ -206,7 +228,7 @@ impl App {
                         .await
                     {
                         Ok(s) => {
-                            login_token = Some(s); //TIPS: Get LoginToken this
+                            login_token = Some(s); 
                             login_state = LoginState::CodeInput;
                         }
                         Err(e) => {
@@ -255,7 +277,8 @@ impl App {
                         .sign_in(login_token.as_ref().unwrap(), self.user_input_buf.as_str())
                         .await
                     {
-                        Ok(_) => {
+                        Ok(s) => {
+                            self.load_data().await;
                             self.state = AppState::Dialogs;
                             break;
                         }
