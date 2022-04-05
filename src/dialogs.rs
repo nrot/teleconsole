@@ -1,7 +1,12 @@
-use std::cmp::Ordering;
-
 use chrono::prelude::Utc;
 use grammers_client::types::Dialog;
+use tui::{widgets::{List, ListItem, StatefulWidget, Borders, Block, ListState}, style::{Style, Color}};
+use grammers_tl_types as tl;
+
+#[derive(Debug, Clone)]
+pub struct DialogsState {
+    pub selected: i64,
+}
 
 pub struct OrderedDialogs {
     header: Vec<i64>,
@@ -41,13 +46,80 @@ impl OrderedDialogs {
         self.all.clear();
     }
 
-    pub fn list(&mut self) -> Vec<Dialog> {
-        self.all.iter().filter_map(|d|{
-            if !self.hidden.contains(&d.chat.id()) {
-                Some(d.clone())
-            } else {
-                None
+    pub fn list(&self) -> Vec<Dialog> {
+        self.all
+            .iter()
+            .filter_map(|d| {
+                if !self.hidden.contains(&d.chat.id()) {
+                    Some(d.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+}
+
+#[inline]
+fn display_count(cnt: String)->String{
+    if cnt.is_empty(){
+        String::new()
+    } else {
+        format!("({})", cnt)
+    }
+}
+
+fn display_name(name: &str, width: usize, ucnt: i32)->String{
+    let cnt = if ucnt > 0 {
+        format!("{}", ucnt)
+    } else {
+        String::new()
+    };
+    if name.len() > width - cnt.len(){
+        format!("{}..{}", name.chars().take(width-cnt.len()).fold(String::new(), |a, b|{
+            a + b.to_string().as_str()
+        }), display_count(cnt))
+    } else {
+        format!("{}{}", name, display_count(cnt))
+    }
+}
+
+impl StatefulWidget for OrderedDialogs {
+    type State = DialogsState;
+    fn render(
+        self,
+        area: tui::layout::Rect,
+        buf: &mut tui::buffer::Buffer,
+        state: &mut Self::State,
+    ) {
+        let mut items = Vec::new();
+        let name_size = (area.width - 1) as usize;
+        let count = (area.height / 2) as usize;
+        let dialogs = self.list();
+        let index = dialogs
+            .iter()
+            .position(|d| d.chat.id() == state.selected)
+            .unwrap_or(0);
+        for (i, dialog) in dialogs.iter().enumerate() {
+            if i > index - count && i < index + count {
+                let s = match &dialog.dialog{
+                    tl::enums::Dialog::Dialog(d)=>{
+                        format!("D: {}", display_name(dialog.chat.name(), name_size - 3, d.unread_count)) 
+                    },
+                    tl::enums::Dialog::Folder(f)=>{
+                        format!("F: {}", display_name(dialog.chat.name(), name_size - 3, f.unread_unmuted_messages_count)) 
+                    }
+                };
+                items.push(if i == index{
+                    ListItem::new(s).style(Style::default().bg(Color::LightGreen))
+                } else {
+                    ListItem::new(s)
+                })
             }
-        }).collect()
+        }
+        let mut slct = ListState::default();
+        slct.select(Some(index));
+        let lst = List::new(items).block(Block::default().borders(Borders::ALL));
+        lst.render(area, buf, &mut slct);
     }
 }

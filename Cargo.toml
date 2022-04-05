@@ -12,6 +12,8 @@ crossterm = "0.22.1"
 tui = "0.17"
 grammers-client = {git = "https://github.com/Lonami/grammers/", branch="master"}
 grammers-session = {git = "https://github.com/Lonami/grammers/", branch="master"}
+grammers-tl-types = {git = "https://github.com/Lonami/grammers/", branch="master"}
+dirs = "4.0"
 tokio = {version="1.17", features=["rt", "rt-multi-thread", "sync", "macros", "signal", "time"]}
 thiserror = "1.0"
 clap = {version="3.1.6", features=["derive", "env", "unicode"]}

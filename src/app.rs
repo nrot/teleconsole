@@ -1,10 +1,10 @@
-use std::io::{self, Stdout};
+use std::{io::{self, Stdout}, path::PathBuf};
 
 use crossterm::{
     event::{read, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use grammers_client::{types::LoginToken, Client, Config, Update};
+use grammers_client::{client::chats::InvocationError, types::LoginToken, Client, Config, Update};
 use tokio::sync::mpsc;
 use tui::{
     backend::CrosstermBackend,
@@ -14,7 +14,7 @@ use tui::{
     Terminal,
 };
 
-use crate::{tg, dialogs::OrderedDialogs};
+use crate::{dialogs::OrderedDialogs, tg};
 
 #[derive(Debug, Clone, Copy)]
 pub enum AppState {
@@ -26,10 +26,10 @@ pub enum AppState {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum DialogState{
+pub enum DialogState {
     DialogChose,
     DialogView,
-    DialogInput
+    DialogInput,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -47,6 +47,7 @@ pub struct App {
     terminal: Terminal<CrosstermBackend<Stdout>>,
     user_input_buf: String,
     chats: OrderedDialogs,
+    session_path: PathBuf,
     api_id: i32,
     api_hash: String,
 }
@@ -61,7 +62,7 @@ fn center(window: Rect, w: u16, h: u16) -> Rect {
 }
 
 impl App {
-    pub async fn new(config: Config) -> Result<Self, tg::TgErrors> {
+    pub async fn new(config: Config, spath: PathBuf) -> Result<Self, tg::TgErrors> {
         let (txk, rxk) = mpsc::unbounded_channel();
         tokio::spawn(async move {
             while let Ok(event) = read() {
@@ -81,6 +82,7 @@ impl App {
             terminal,
             user_input_buf: String::new(),
             chats: OrderedDialogs::new(),
+            session_path: spath,
             api_id,
             api_hash,
         })
@@ -89,7 +91,7 @@ impl App {
     pub async fn run(&mut self) {
         enable_raw_mode().unwrap();
         self.terminal.clear().unwrap();
-        if self.client.is_authorized().await.unwrap(){
+        if self.client.is_authorized().await.unwrap() {
             self.state = AppState::Dialogs;
         }
         loop {
@@ -97,7 +99,7 @@ impl App {
                 AppState::Login => {
                     self.login().await;
                 }
-                AppState::Dialogs=>{
+                AppState::Dialogs => {
                     self.dialogs().await;
                 }
                 AppState::Exit => {
@@ -107,6 +109,8 @@ impl App {
                     break;
                 }
             }
+            self.user_input_buf = String::new();
+            self.terminal.clear().unwrap();
         }
         self.inputs.close();
         disable_raw_mode().unwrap();
@@ -141,41 +145,78 @@ impl App {
             .unwrap();
     }
 
-    pub async fn draw_dialogs(&mut self){
-        let mut dialogs = self.client.iter_dialogs();
-        self.chats.clear();
-        while let Some(d) = dialogs.next().await.unwrap(){
-            self.chats.insert(d);
+    pub async fn wait_flud(&mut self, time: u32) {
+        let mut now = chrono::Local::now();
+        let end = chrono::Local::now() + chrono::Duration::seconds(time as i64);
+        while now < end {
+            now = chrono::Local::now();
+            self.draw_message(
+                "Wait flood",
+                format!("End time: {}", end.timestamp() - now.timestamp()).as_str(),
+                Rect {
+                    width: 30,
+                    height: 3,
+                    ..Default::default()
+                },
+            );
         }
-        let lst = self.chats.list();
-        self.terminal.draw(|f|{
-            let mut tdrw = Vec::new();
-            for d in lst.iter(){
-                tdrw.push(Row::new(vec![d.chat.name(), ]))
-            }
-            let tbl = Table::new(tdrw);
-
-        }).unwrap();
     }
 
-    pub async fn dialogs(&mut self){
+    pub async fn draw_dialogs(&mut self) {
+        let mut dialogs = self.client.iter_dialogs();
+        self.chats.clear();
+        let mut get_dialogs = true;
+        while get_dialogs {
+            match dialogs.next().await {
+                Ok(Some(d)) => {
+                    self.chats.insert(d);
+                }
+                Ok(None) => {
+                    get_dialogs = false;
+                }
+                Err(e) => match e {
+                    InvocationError::Rpc(r) => match r.name.as_str() {
+                        "FLOOD_WAIT" => {
+                            self.wait_flud(r.value.unwrap_or(1)).await;
+                        }
+                        e => {
+                            self.draw_error(&e).await;
+                        }
+                    },
+                    e => {
+                        self.draw_error(&e).await;
+                    }
+                },
+            }
+        }
+        let lst = self.chats.list();
+        self.terminal
+            .draw(|f| {
+                let mut tdrw = Vec::new();
+                for d in lst.iter() {
+                    tdrw.push(Row::new(vec![d.chat.name()]))
+                }
+                let tbl = Table::new(tdrw);
+            })
+            .unwrap();
+    }
+
+    pub async fn dialogs(&mut self) {
         let mut dialog_state = DialogState::DialogChose;
         loop {
             self.draw_dialogs().await;
-            match dialog_state{
-                DialogState::DialogChose=>{
-
-                },
-                DialogState::DialogView=>{},
-                DialogState::DialogInput=>{},
+            match dialog_state {
+                DialogState::DialogChose => {}
+                DialogState::DialogView => {}
+                DialogState::DialogInput => {}
                 #[allow(unreachable_patterns)]
-                _=>{break}
+                _ => break,
             }
         }
     }
 
-    pub async fn load_data(&mut self){
-        self.client.session().save();
+    pub async fn load_data(&mut self) {
+        self.client.session().save_to_file(self.session_path.clone()).unwrap();
     }
 
     pub async fn login(&mut self) {
@@ -228,8 +269,9 @@ impl App {
                         .await
                     {
                         Ok(s) => {
-                            login_token = Some(s); 
+                            login_token = Some(s);
                             login_state = LoginState::CodeInput;
+                            self.user_input_buf = String::new();
                         }
                         Err(e) => {
                             self.draw_error(&e).await;
@@ -288,9 +330,9 @@ impl App {
                             login_token = None
                         }
                     }
-                },
+                }
                 #[allow(unreachable_patterns)]
-                _=>{break}
+                _ => break,
             }
         }
     }
