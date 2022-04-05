@@ -4,10 +4,11 @@ use tui::{widgets::{List, ListItem, StatefulWidget, Borders, Block, ListState}, 
 use grammers_tl_types as tl;
 
 #[derive(Debug, Clone)]
-pub struct DialogsState {
+pub struct DialogsSelected {
     pub selected: i64,
 }
 
+#[derive(Debug, Clone)]
 pub struct OrderedDialogs {
     header: Vec<i64>,
     hidden: Vec<i64>,
@@ -85,7 +86,7 @@ fn display_name(name: &str, width: usize, ucnt: i32)->String{
 }
 
 impl StatefulWidget for OrderedDialogs {
-    type State = DialogsState;
+    type State = DialogsSelected;
     fn render(
         self,
         area: tui::layout::Rect,
@@ -94,14 +95,14 @@ impl StatefulWidget for OrderedDialogs {
     ) {
         let mut items = Vec::new();
         let name_size = (area.width - 1) as usize;
-        let count = (area.height / 2) as usize;
+        let count = (area.height / 2) as i128;
         let dialogs = self.list();
         let index = dialogs
             .iter()
             .position(|d| d.chat.id() == state.selected)
             .unwrap_or(0);
         for (i, dialog) in dialogs.iter().enumerate() {
-            if i > index - count && i < index + count {
+            if (i as i128) > (index as i128) - count && (i as i128) < (index as i128) + count {
                 let s = match &dialog.dialog{
                     tl::enums::Dialog::Dialog(d)=>{
                         format!("D: {}", display_name(dialog.chat.name(), name_size - 3, d.unread_count)) 

@@ -14,7 +14,7 @@ use tui::{
     Terminal,
 };
 
-use crate::{dialogs::OrderedDialogs, tg};
+use crate::{dialogs::{OrderedDialogs, DialogsSelected}, tg};
 
 #[derive(Debug, Clone, Copy)]
 pub enum AppState {
@@ -189,16 +189,12 @@ impl App {
                 },
             }
         }
-        let lst = self.chats.list();
-        self.terminal
-            .draw(|f| {
-                let mut tdrw = Vec::new();
-                for d in lst.iter() {
-                    tdrw.push(Row::new(vec![d.chat.name()]))
-                }
-                let tbl = Table::new(tdrw);
-            })
-            .unwrap();
+        self.terminal.draw(|f|{
+            let d = self.chats.clone();
+            let mut st = DialogsSelected{selected: 1};
+            f.render_stateful_widget(d, f.size(), &mut st);
+        }).unwrap();
+        self.inputs.recv().await;
     }
 
     pub async fn dialogs(&mut self) {
