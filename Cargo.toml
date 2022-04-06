@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 # termion = "1.5"
 # tui = { version = "0.17", default-features = false, features = ['termion'] }
+dptree = "0.1.2"
 crossterm = "0.22.1"
 tui = "0.17"
 grammers-client = {git = "https://github.com/Lonami/grammers/", branch="master"}

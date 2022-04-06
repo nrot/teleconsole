@@ -1,25 +1,37 @@
-use std::{io::{self, Stdout}, path::PathBuf};
+use std::{
+    any::Any,
+    collections::HashMap,
+    io::{self, Stdout},
+    path::PathBuf,
+};
 
 use crossterm::{
     event::{read, Event, KeyCode},
     terminal::{disable_raw_mode, enable_raw_mode},
 };
-use grammers_client::{client::chats::InvocationError, types::LoginToken, Client, Config, Update};
+use grammers_client::types::Update;
+use grammers_client::{client::chats::InvocationError, Client, Config};
 use tokio::sync::mpsc;
 use tui::{
     backend::CrosstermBackend,
     layout::{Alignment, Rect},
     style::{Color, Style},
-    widgets::{Block, Borders, Paragraph, Row, Table},
-    Terminal,
+    widgets::{Block, Borders, Paragraph},
+    Terminal, Frame,
 };
 
-use crate::{dialogs::{OrderedDialogs, DialogsSelected}, tg};
+use crate::{
+    dialogs::{DialogsSelected, OrderedDialogs},
+    tg,
+};
+
+use dptree::di::DependencyMap;
 
 #[derive(Debug, Clone, Copy)]
 pub enum AppState {
-    Login = 0,
-    Dialogs = 1,
+    Prepare = 0,
+    Login = 1,
+    Dialogs = 2,
     Input,
     Settings,
     Exit,
@@ -39,9 +51,10 @@ pub enum LoginState {
     CodeInput,
     CodeCheck,
 }
-
 pub struct App {
     state: AppState,
+    dependecys: DependencyMap,
+    drawers: HashMap<AppState, Vec<Drawer>>,
     client: Client,
     inputs: mpsc::UnboundedReceiver<Event>,
     terminal: Terminal<CrosstermBackend<Stdout>>,
@@ -75,8 +88,11 @@ impl App {
         let terminal = Terminal::new(backend).unwrap();
         let api_id = config.api_id;
         let api_hash = config.api_hash.clone();
+        let deps = DependencyMap::new(); //.insert(item);
         Ok(App {
-            state: AppState::Login,
+            state: AppState::Prepare,
+            dependecys: deps,
+            drawers: HashMap::new(),
             client: Client::connect(config).await?,
             inputs: rxk,
             terminal,
@@ -86,6 +102,14 @@ impl App {
             api_id,
             api_hash,
         })
+    }
+
+    pub fn add_deps<T: Send + Sync + 'static>(self, item: T) -> Self {
+        self
+    }
+
+    pub fn add_handler(self, state: AppState, handler: Drawer) -> Self {
+        self
     }
 
     pub async fn run(&mut self) {
@@ -189,11 +213,13 @@ impl App {
                 },
             }
         }
-        self.terminal.draw(|f|{
-            let d = self.chats.clone();
-            let mut st = DialogsSelected{selected: 1};
-            f.render_stateful_widget(d, f.size(), &mut st);
-        }).unwrap();
+        self.terminal
+            .draw(|f| {
+                let d = self.chats.clone();
+                let mut st = DialogsSelected { selected: 1 };
+                f.render_stateful_widget(d, f.size(), &mut st);
+            })
+            .unwrap();
         self.inputs.recv().await;
     }
 
@@ -212,7 +238,10 @@ impl App {
     }
 
     pub async fn load_data(&mut self) {
-        self.client.session().save_to_file(self.session_path.clone()).unwrap();
+        self.client
+            .session()
+            .save_to_file(self.session_path.clone())
+            .unwrap();
     }
 
     pub async fn login(&mut self) {
