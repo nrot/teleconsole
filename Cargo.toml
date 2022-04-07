@@ -19,3 +19,4 @@ tokio = {version="1.17", features=["rt", "rt-multi-thread", "sync", "macros", "s
 thiserror = "1.0"
 clap = {version="3.1.6", features=["derive", "env", "unicode"]}
 chrono = "0.4.19"
+async-trait = "0.1.53"
