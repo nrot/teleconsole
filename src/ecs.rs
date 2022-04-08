@@ -12,9 +12,9 @@ use std::{
 use async_trait::async_trait;
 use crossterm::event::Event;
 use dptree::di::{DependencyMap, DependencySupplier};
-use futures::{Future, select, future::select};
+use futures::{future::select, select, Future};
 use grammers_client::{types::Update, Client};
-use tokio::sync::{Mutex, MutexGuard, mpsc};
+use tokio::sync::{mpsc, Mutex, MutexGuard};
 use tui::{backend::CrosstermBackend, Frame, Terminal};
 
 // use crate::di::{Dependency, DependencyMap};
@@ -103,29 +103,37 @@ impl<State: Sized + Eq + Hash> ExecSystemDeps<State> for System<State> {
     async fn run<'a>(&mut self, f: &'a mut Terminal<CrosstermBackend<Stdout>>) {}
 }
 
-async fn run<State: Sized + Eq + Hash>(slf: &mut System<State>) {
-    while slf.state != slf.estate {
-        let global = slf.global.lock().await;
-        let mut rxk: Arc<mpsc::UnboundedReceiver<Event>> = global.get();
-        let mut mc: Arc<Mutex<Client>> = global.get();
-        let mut client = mc.lock().await.borrow_mut();
-        
-        select(Box::pin(rxk.recv()), Box::pin(client.next_update()));
+async fn run<State: Sized + Eq + Hash>(
+    slf: &mut System<State>,
+    input: &Option<Event>,
+    update: &Option<Update>,
+) {
+    let mut nu;
+    if let Some(ss) = slf.sub_system.get(&slf.state) {
 
-        if let Some(vd) = slf.drawer.get(&slf.state) {
-            let mut mt: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>> = global.get();
-            let mut t = mt.lock().await.borrow_mut();
-            let mut frame = t.get_frame();
-            for d in vd.iter() {
-                d(ArgumenDrawer {
-                    global: slf.global.clone(),
-                    local: slf.local.clone(),
-                    frame: &mut frame,
-                });
-            }
+    } else {
+
+    }
+    let global = slf.global.lock().await;
+    let mut rxk: Arc<mpsc::UnboundedReceiver<Event>> = global.get();
+    let mut mc: Arc<Mutex<Client>> = global.get();
+    let mut client = mc.lock().await.borrow_mut();
+    nu = Box::pin(client.next_update());
+    select(Box::pin(rxk.recv()), nu); //Как получать и ввод и обновления с минимальными задержками
+
+    if let Some(vd) = slf.drawer.get(&slf.state) {
+        let mut mt: Arc<Mutex<Terminal<CrosstermBackend<Stdout>>>> = global.get();
+        let mut t = mt.lock().await.borrow_mut();
+        let mut frame = t.get_frame();
+        for d in vd.iter() {
+            d(ArgumenDrawer {
+                global: slf.global.clone(),
+                local: slf.local.clone(),
+                frame: &mut frame,
+            });
         }
-        if let Some(r) = slf.resolver.get(&slf.state) {
-            slf.state = r();
-        }
+    }
+    if let Some(r) = slf.resolver.get(&slf.state) {
+        slf.state = r();
     }
 }
