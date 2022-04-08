@@ -8,6 +8,7 @@ mod tg;
 mod args;
 mod dialogs;
 mod ecs;
+// mod di;
 
 #[tokio::main]
 async fn main() {
