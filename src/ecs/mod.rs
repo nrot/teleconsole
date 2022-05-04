@@ -2,12 +2,11 @@ pub mod state;
 
 use std::{
     borrow::{Borrow, BorrowMut},
-    collections::{HashMap},
-    hash::{Hash, Hasher},
+    collections::{HashMap, BTreeMap},
     io::Stdout,
     pin::Pin,
     rc::Rc,
-    sync::Arc, any::Any,
+    sync::Arc, any::Any, hash::Hash,
 };
 
 use async_trait::async_trait;
@@ -43,6 +42,8 @@ pub enum RunState {
     Ready,
 }
 
+pub struct SystemState(Arc<dyn Ord>);
+
 pub type SystemId = usize;
 pub type SystemList = HashMap<SystemId, System<SystemState>>;
 
@@ -50,11 +51,11 @@ pub struct System<State> {
     pub id: SystemId,
     pub state: State,
     pub estate: State,
-    pub drawer: HashMap<State, Vec<Drawer>>,
+    pub drawer: BTreeMap<State, Vec<Drawer>>,
     pub global: Rc<Mutex<DependencyMap>>,
     pub local: Rc<Mutex<DependencyMap>>,
-    pub sub_system: HashMap<State, SystemId>,
-    pub resolver: HashMap<State, Resolver<State>>,
+    pub sub_system: BTreeMap<State, SystemId>,
+    pub resolver: BTreeMap<State, Resolver<State>>,
 }
 
 impl<State> Hash for System<State> {
@@ -63,31 +64,31 @@ impl<State> Hash for System<State> {
     }
 }
 
-impl<State: Eq + Hash> System<State> {
+impl<State: Ord> System<State> {
     fn new(id: SystemId, istate: State, estate: State, global: Rc<Mutex<DependencyMap>>) -> Self {
         System {
             id,
             state: istate,
             estate,
-            drawer: HashMap::new(),
+            drawer: BTreeMap::new(),
             global,
             local: Rc::new(Mutex::new(DependencyMap::new())),
-            sub_system: HashMap::new(),
-            resolver: HashMap::new(),
+            sub_system: BTreeMap::new(),
+            resolver: BTreeMap::new(),
         }
     }
 }
 
-pub trait ExecSystem<State: Eq + Hash>:
+pub trait ExecSystem<State: Ord>:
     ExecSystemLocals<State> + ExecSystemDeps<State>
 {
 }
-impl<T: ExecSystemLocals<State> + ExecSystemDeps<State>, State: Eq + Hash>
+impl<T: ExecSystemLocals<State> + ExecSystemDeps<State>, State: Ord>
     ExecSystem<State> for T
 {
 }
 
-pub trait ExecSystemLocals<State: Eq + Hash> {
+pub trait ExecSystemLocals<State: Ord> {
     fn add_drawer(&mut self, state: State, drawer: Drawer);
     fn set_resolver(&mut self, state: State, resolver: Resolver<State>);
     fn set_subsystem(&mut self, state: State, system: SystemId);
@@ -97,7 +98,7 @@ pub trait ExecSystemLocals<State: Eq + Hash> {
 }
 //TODO: Реализовать рекурсивную структуру ECS с возможностью подтипов
 
-impl<State: Eq + Hash> ExecSystemLocals<State> for System<State> {
+impl<State: Ord> ExecSystemLocals<State> for System<State> {
     fn add_drawer(&mut self, state: State, drawer: Drawer) {
         if let Some(v) = self.drawer.get_mut(&state) {
             v.push(drawer);
@@ -136,7 +137,7 @@ pub trait ExecSystemDeps<State> {
 }
 
 #[async_trait(?Send)]
-impl<State: Hash + Eq> ExecSystemDeps<State> for System<State> {
+impl<State: Ord> ExecSystemDeps<State> for System<State> {
     async fn add_local<T: Send + Sync + 'static>(&mut self, value: T) {
         self.local.lock().await.borrow_mut().insert(value);
     }
@@ -158,7 +159,7 @@ impl<State: Hash + Eq> ExecSystemDeps<State> for System<State> {
 }
 
 ///TODO: Избавиться от рекурсии последовательным опросом потомков через get_subsystem_of_state(&self)->SystemId и созданием стека
-async fn step<State: Eq + Hash>(
+async fn step<State: Ord>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     systems: &mut SystemList,
     input: Option<Event>,

@@ -11,35 +11,7 @@
 Для этого нужен трейт System и процедурный макрос который реализует этот трейт
 */
 
-trait DynHash{
-    fn dyn_hash(&self, state: &mut dyn Hasher);
-}
 
-impl Hash for dyn SizedSearch {
-    fn hash<H>(&self, state: &mut H)
-    where
-        H: Hasher {
-        self.dyn_hash(state);
-    }
-}
-
-impl<T> DynHash for T
-where
-    T: Hash {
-    fn dyn_hash(&self, state: &mut dyn Hasher) {
-        self.hash(&mut state);
-    }
-}
-
-
-impl PartialEq for SystemState{
-    fn eq(&self, other: &Self) -> bool {
-        self.0.eq(&other.0) 
-    }
-}
-
-
-pub struct SystemState(Arc<dyn SizedSearch>);
 
 pub trait SizedSearch: Eq+ Send + Sync {}
 impl<T: Eq + Send + Sync> SizedSearch for T {}
