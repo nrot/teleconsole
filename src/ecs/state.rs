@@ -12,6 +12,12 @@
 */
 
 
+pub trait SystemState {
+    fn id(&self)->usize;
+}
 
-pub trait SizedSearch: Eq+ Send + Sync {}
-impl<T: Eq + Send + Sync> SizedSearch for T {}
+impl SystemState for usize{
+    fn id(&self) ->usize {
+        self as usize
+    }
+}

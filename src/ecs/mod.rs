@@ -42,10 +42,9 @@ pub enum RunState {
     Ready,
 }
 
-pub struct SystemState(Arc<dyn Ord>);
 
 pub type SystemId = usize;
-pub type SystemList = HashMap<SystemId, System<SystemState>>;
+pub type SystemList = HashMap<SystemId, System<dyn SystemState>>;
 
 pub struct System<State> {
     pub id: SystemId,
