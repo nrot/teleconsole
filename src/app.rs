@@ -1,5 +1,6 @@
 use std::any::Any;
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::io;
 use std::{path::PathBuf, io::Stdout};
 
@@ -10,6 +11,7 @@ use grammers_client::{Client, Config};
 use tokio::sync::mpsc;
 use tui::{Terminal, backend::CrosstermBackend};
 
+use crate::ecs::SystemState;
 use crate::{ecs, tg};
 
 pub struct App{
@@ -47,9 +49,14 @@ impl App{
         })
     }
 
+    pub fn add_system(&mut self, system: ecs::System<SystemState>){
+        let s = system.id();
+        self.systems.insert(s, system);
+    }
+
     pub async fn run(&mut self){
         enable_raw_mode().unwrap();
         self.terminal.clear().unwrap();
-
+        // ecs::step(&mut self.terminal, &mut self.systems, input, update);
     }
 }

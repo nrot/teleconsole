@@ -2,11 +2,11 @@ pub mod state;
 
 use std::{
     borrow::{Borrow, BorrowMut},
-    collections::{HashMap, BTreeMap},
+    collections::{HashMap},
     io::Stdout,
     pin::Pin,
     rc::Rc,
-    sync::Arc, any::Any, hash::Hash,
+    sync::Arc, hash::Hash,
 };
 
 use async_trait::async_trait;
@@ -17,8 +17,7 @@ use grammers_client::types::Update;
 use tokio::sync::Mutex;
 use tui::{backend::CrosstermBackend, Frame, Terminal};
 
-use self::state::SystemState;
-
+pub use self::state::Key;
 pub struct ArgumenDrawer<'a> {
     pub frame: Rc<Mutex<Frame<'a, CrosstermBackend<Stdout>>>>,
     pub global: Rc<Mutex<DependencyMap>>,
@@ -36,7 +35,7 @@ pub type Resolver<State> =
     fn(system: &mut System<State>, input: Option<Event>, update: Rc<Mutex<Option<Update>>>) -> State;
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum RunState {
     Tick,
     Ready,
@@ -44,50 +43,57 @@ pub enum RunState {
 
 
 pub type SystemId = usize;
-pub type SystemList = HashMap<SystemId, System<dyn SystemState>>;
+pub type SystemState = Box<dyn Key>;
+pub type SystemList = HashMap<SystemId, System<SystemState>>;
 
 pub struct System<State> {
-    pub id: SystemId,
+    id: SystemId,
     pub state: State,
     pub estate: State,
-    pub drawer: BTreeMap<State, Vec<Drawer>>,
+    pub drawer: HashMap<State, Vec<Drawer>>,
     pub global: Rc<Mutex<DependencyMap>>,
     pub local: Rc<Mutex<DependencyMap>>,
-    pub sub_system: BTreeMap<State, SystemId>,
-    pub resolver: BTreeMap<State, Resolver<State>>,
+    pub sub_system: HashMap<State, SystemId>,
+    pub resolver: HashMap<State, Resolver<State>>,
+}
+
+impl<State> System<State>{
+    pub fn id(&self)->SystemId{
+        self.id
+    }
 }
 
 impl<State> Hash for System<State> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
+        Hash::hash(&self.id, state);
     }
 }
 
-impl<State: Ord> System<State> {
+impl<State: Hash> System<State> {
     fn new(id: SystemId, istate: State, estate: State, global: Rc<Mutex<DependencyMap>>) -> Self {
         System {
             id,
             state: istate,
             estate,
-            drawer: BTreeMap::new(),
+            drawer: HashMap::new(),
             global,
             local: Rc::new(Mutex::new(DependencyMap::new())),
-            sub_system: BTreeMap::new(),
-            resolver: BTreeMap::new(),
+            sub_system: HashMap::new(),
+            resolver: HashMap::new(),
         }
     }
 }
 
-pub trait ExecSystem<State: Ord>:
+pub trait ExecSystem<State: Hash + Eq>:
     ExecSystemLocals<State> + ExecSystemDeps<State>
 {
 }
-impl<T: ExecSystemLocals<State> + ExecSystemDeps<State>, State: Ord>
+impl<T: ExecSystemLocals<State> + ExecSystemDeps<State>, State: Hash + Eq>
     ExecSystem<State> for T
 {
 }
 
-pub trait ExecSystemLocals<State: Ord> {
+pub trait ExecSystemLocals<State: Hash> {
     fn add_drawer(&mut self, state: State, drawer: Drawer);
     fn set_resolver(&mut self, state: State, resolver: Resolver<State>);
     fn set_subsystem(&mut self, state: State, system: SystemId);
@@ -97,7 +103,7 @@ pub trait ExecSystemLocals<State: Ord> {
 }
 //TODO: Реализовать рекурсивную структуру ECS с возможностью подтипов
 
-impl<State: Ord> ExecSystemLocals<State> for System<State> {
+impl<State: Hash + Eq> ExecSystemLocals<State> for System<State> {
     fn add_drawer(&mut self, state: State, drawer: Drawer) {
         if let Some(v) = self.drawer.get_mut(&state) {
             v.push(drawer);
@@ -136,7 +142,7 @@ pub trait ExecSystemDeps<State> {
 }
 
 #[async_trait(?Send)]
-impl<State: Ord> ExecSystemDeps<State> for System<State> {
+impl<State: Hash + Eq> ExecSystemDeps<State> for System<State> {
     async fn add_local<T: Send + Sync + 'static>(&mut self, value: T) {
         self.local.lock().await.borrow_mut().insert(value);
     }
@@ -157,8 +163,7 @@ impl<State: Ord> ExecSystemDeps<State> for System<State> {
     }
 }
 
-///TODO: Избавиться от рекурсии последовательным опросом потомков через get_subsystem_of_state(&self)->SystemId и созданием стека
-async fn step<State: Ord>(
+pub async fn step<State: Ord>(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     systems: &mut SystemList,
     input: Option<Event>,
