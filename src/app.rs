@@ -1,17 +1,16 @@
-use std::any::Any;
 use std::collections::HashMap;
-use std::hash::Hash;
 use std::io;
 use std::{path::PathBuf, io::Stdout};
 
 use crossterm::event::Event;
 use crossterm::event::read;
 use crossterm::terminal::enable_raw_mode;
+use futures::future::select;
 use grammers_client::{Client, Config};
 use tokio::sync::mpsc;
 use tui::{Terminal, backend::CrosstermBackend};
 
-use crate::ecs::SystemState;
+use crate::ecs::{SystemState, step};
 use crate::{ecs, tg};
 
 pub struct App{
@@ -57,6 +56,26 @@ impl App{
     pub async fn run(&mut self){
         enable_raw_mode().unwrap();
         self.terminal.clear().unwrap();
+        let it = Box::pin(self.inputs.recv());
+        let ut = Box::pin(self.client.next_update());
+        let sel = select(it, ut);
+        let w = match sel.await{
+            futures::future::Either::Left((it, _)) => {
+                step(&mut self.terminal, &mut self.systems, it, None).await
+            },
+            futures::future::Either::Right((ut, _)) => {
+                match ut{
+                    Ok(ut)=>{
+                        step(&mut self.terminal, &mut self.systems, None, ut).await
+                    },
+                    Err(_)=>{
+                        println!("");
+                        false
+                    }
+                }
+                
+            },
+        };
         // ecs::step(&mut self.terminal, &mut self.systems, input, update);
     }
 }

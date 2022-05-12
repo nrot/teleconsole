@@ -163,7 +163,7 @@ impl<State: Hash + Eq> ExecSystemDeps<State> for System<State> {
     }
 }
 
-pub async fn step<State: Ord>(
+pub async fn step(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     systems: &mut SystemList,
     input: Option<Event>,
