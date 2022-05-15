@@ -8,6 +8,7 @@ mod tg;
 mod args;
 mod dialogs;
 mod ecs;
+mod systems;
 // mod di;
 
 #[tokio::main]
@@ -30,6 +31,8 @@ async fn main() {
         session: Session::load_file_or_create(path.clone()).unwrap(),
     };
     if let Ok(mut a) = app::App::new(config, path).await {
+        let mut ls = ecs::System::new(1, systems::login::LoginState::PreLogin, systems::login::LoginState::EndLogin, a.get_global());
+        a.add_system(ls);
         a.run().await;
     } else {
         eprintln!("Can`t start app");

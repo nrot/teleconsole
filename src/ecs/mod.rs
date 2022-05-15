@@ -18,7 +18,7 @@ use tokio::sync::Mutex;
 use tui::{backend::CrosstermBackend, Frame, Terminal};
 
 pub use self::state::Key;
-pub struct ArgumenDrawer<'a> {
+pub struct ArgumentDrawer<'a> {
     pub frame: Rc<Mutex<Frame<'a, CrosstermBackend<Stdout>>>>,
     pub global: Rc<Mutex<DependencyMap>>,
     pub local: Rc<Mutex<DependencyMap>>,
@@ -26,7 +26,7 @@ pub struct ArgumenDrawer<'a> {
     pub events: Rc<Mutex<Option<Update>>>,
 }
 
-pub type Drawer = fn(arguments: ArgumenDrawer) -> Pin<Box<dyn Future<Output = ()>>>; //TODO: Переделать в динамические аргументы ?????
+pub type Drawer = fn(arguments: ArgumentDrawer) -> Pin<Box<dyn Future<Output = ()>>>; //TODO: Переделать в динамические аргументы ?????
                                                                                      //TIPS: Продумать как передовать всю необходимую информацию во внутрь систем по цепочке
                                                                                      //TIPS: Система должна иметь доступ к глобальным объектам.
 
@@ -69,12 +69,12 @@ impl<State> Hash for System<State> {
     }
 }
 
-impl<State: Hash> System<State> {
-    fn new(id: SystemId, istate: State, estate: State, global: Rc<Mutex<DependencyMap>>) -> Self {
+impl System<SystemState> {
+    pub fn new<State: 'static + Key>(id: SystemId, istate: State, estate: State, global: Rc<Mutex<DependencyMap>>) -> Self {
         System {
             id,
-            state: istate,
-            estate,
+            state: Box::new(istate),
+            estate: Box::new(estate),
             drawer: HashMap::new(),
             global,
             local: Rc::new(Mutex::new(DependencyMap::new())),
@@ -183,7 +183,7 @@ pub async fn step(
     let events = Rc::new(Mutex::new(update));
     
     for drawer in system.get_drawer_of_state().iter(){
-        drawer(ArgumenDrawer{
+        drawer(ArgumentDrawer{
             events: events.clone(),
             frame: frame.clone(),
             inputs: input,

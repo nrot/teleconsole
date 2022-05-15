@@ -1,13 +1,16 @@
 use std::collections::HashMap;
 use std::io;
+use std::rc::Rc;
 use std::{path::PathBuf, io::Stdout};
 
 use crossterm::event::Event;
 use crossterm::event::read;
 use crossterm::terminal::enable_raw_mode;
+use dptree::prelude::DependencyMap;
 use futures::future::select;
 use grammers_client::{Client, Config};
 use tokio::sync::mpsc;
+use tokio::sync::Mutex;
 use tui::{Terminal, backend::CrosstermBackend};
 
 use crate::ecs::{SystemState, step};
@@ -20,7 +23,8 @@ pub struct App{
     session_path: PathBuf,
     api_id: i32,
     api_hash: String,
-    systems: ecs::SystemList
+    systems: ecs::SystemList,
+    global: Rc<Mutex<DependencyMap>>,
 }
 
 impl App{
@@ -37,6 +41,7 @@ impl App{
         let terminal = Terminal::new(backend).unwrap();
         let api_id = config.api_id;
         let api_hash = config.api_hash.clone();
+        let global = Rc::new(Mutex::new(DependencyMap::new()));
         Ok(App {
             client: Client::connect(config).await?,
             inputs: rxk,
@@ -45,11 +50,13 @@ impl App{
             session_path: spath,
             api_id,
             api_hash,
+            global
         })
     }
 
-    pub fn add_system(&mut self, system: ecs::System<SystemState>){
+    pub fn add_system(&mut self, mut system: ecs::System<SystemState>){
         let s = system.id();
+        system.global = self.global.clone();
         self.systems.insert(s, system);
     }
 
@@ -77,5 +84,8 @@ impl App{
             },
         };
         // ecs::step(&mut self.terminal, &mut self.systems, input, update);
+    }
+    pub fn get_global(&self)->Rc<Mutex<DependencyMap>>{
+        self.global.clone()
     }
 }
